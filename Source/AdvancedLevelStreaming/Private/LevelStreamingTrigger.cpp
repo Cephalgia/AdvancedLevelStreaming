@@ -27,7 +27,20 @@ void ALevelStreamingTrigger::BeginPlay()
 
 void ALevelStreamingTrigger::OnBeginOverlap(AActor *OverlappingActor, AActor *OtherActor)
 {
-	if (!bLoaded)
+	// set level as current
+	if (ADreamGameMode * GameMode = Cast<ADreamGameMode>(GetWorld()->GetAuthGameMode()))
+	{
+		if (ULevelManager * LevelManager = GameMode->LevelManager)
+		{
+			if (ULevel * Level = Cast<ULevel>(GetOuter()))
+			{
+				LevelManager->SetCurrentLevel(Level);
+				LevelManager->TrimAdjacentLevels(this);
+				LevelManager->LoadAdjacentLevels(this);
+			}
+		}
+	}
+	/*if (!bLoaded)
 	{
 		if (ADreamGameMode * GameMode = Cast<ADreamGameMode>(GetWorld()->GetAuthGameMode()))
 		{
@@ -36,17 +49,16 @@ void ALevelStreamingTrigger::OnBeginOverlap(AActor *OverlappingActor, AActor *Ot
 				LevelManager->StreamNextLevel();
 			}
 		}
-	}
+	}*/
 }
 
 void ALevelStreamingTrigger::OnEndOverlap(AActor *OverlappingActor, AActor *OtherActor)
 {
-	// check if we left the level!!!!!
 	if (ADreamGameMode * GameMode = Cast<ADreamGameMode>(GetWorld()->GetAuthGameMode()))
 	{
 		if (ULevelManager * LevelManager = GameMode->LevelManager)
 		{
-			LevelManager->UnloadLevel();
+			//LevelManager->UnloadLevel();
 		}
 	}
 }
