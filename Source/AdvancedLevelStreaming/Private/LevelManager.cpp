@@ -1,6 +1,8 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
 
 #include "LevelManager.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 FLevelDoor::FLevelDoor()
 {
@@ -27,24 +29,46 @@ void FLevelInfo::Reset()
 {
 	LevelStreaming = nullptr;
 	LevelName = "";
-	Trigger = nullptr;
 	LevelDoors.Empty();
 }
 
-FLevelInfo * FLevelMap::GetLevelMapInfo(ULevel* InLevel)
+TSharedPtr<FLevelInfo> FLevelMap::GetLevelMapInfo(ULevel* InLevel)
 {
 	if (!InLevel)
 	{
-		return nullptr;
+		return TSharedPtr<FLevelInfo>();
 	}
-	for (FLevelInfo &Level: Levels)
-	{
-		if (InLevel == Level.LevelStreaming->GetLoadedLevel())
-		{
-			return &Level;
-		}
-	}
-	return nullptr;
+	FName LevelName = InLevel->GetOuter()->GetFName();
+	TSharedPtr<FLevelInfo> * FoundLevel = Levels.Find(LevelName);
+	return FoundLevel ? *FoundLevel : TSharedPtr<FLevelInfo>();
+}
+
+bool FLevelMap::HasLevel(FName InName)
+{
+	TSharedPtr<FLevelInfo>* FoundLevel = Levels.Find(InName);
+	bool bHasLevel = false;
+	TArray<FName> LevelNames;
+	Levels.GenerateKeyArray(LevelNames);
+	bHasLevel = LevelNames.Contains(InName);
+	bool AnotherHasLevel = FoundLevel != nullptr;
+	return AnotherHasLevel;
+}
+
+void FLevelMap::RemoveLevel(FName InLevelName)
+{
+	Levels.Remove(InLevelName);
+}
+
+TSharedPtr<FLevelInfo> FLevelMap::GetCurrentLevel()
+{
+	TSharedPtr<FLevelInfo> * FoundLevel = Levels.Find(CurrentLevelName);
+	return FoundLevel ? *FoundLevel : TSharedPtr<FLevelInfo>();
+}
+
+void FLevelMap::SetCurrentLevel(FName InLevelName)
+{
+	CurrentLevelName = InLevelName;
+	UE_LOG(LogTemp, Warning, TEXT("CurrentLevel set to %s"), *InLevelName.ToString());
 }
 
 ULevelManager::ULevelManager(const FObjectInitializer& ObjectInitializer)
@@ -59,22 +83,38 @@ void ULevelManager::Initialize()
 
 void ULevelManager::Tick(float DeltaSeconds)
 {
-
+	if (ACharacter * PlayerCharacter = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0))
+	{
+		if (UCharacterMovementComponent * MC = Cast<UCharacterMovementComponent>(PlayerCharacter->GetMovementComponent()))
+		{
+			if (UPrimitiveComponent * Floor = MC->GetMovementBase())
+			{
+				ULevel * CurrentLevel = LevelMap.GetCurrentLevel()->LevelStreaming->GetLoadedLevel();
+				ULevel * FloorLevel = Cast<ULevel>(Floor->GetOwner()->GetOuter());
+				if (CurrentLevel != FloorLevel)
+				{
+					SetCurrentLevel(FloorLevel);
+					LoadAdjacentLevels();
+					TrimAdjacentLevels();
+				}
+			}
+		}
+	}
 }
 
 void ULevelManager::OnStartPlay()
 {
 	ULevelStreaming * StartingLevel = StreamRandomLevel(FTransform(FVector(0.f, 200.f, -90.f)));
 	LevelMap.Levels.Empty();
-	LevelMap.Levels.Add(FLevelInfo(GetLevelName(StartingLevel), StartingLevel));
-	LevelMap.CurrentLevel = &LevelMap.Levels.Last();
-	LevelMap.CurrentLevel->LevelStreaming->OnLevelShown.AddDynamic(this, &ULevelManager::OnFirstLevelLoaded);
+	LevelMap.Levels.Add(GetLevelName(StartingLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(StartingLevel), StartingLevel)));
+	LevelMap.SetCurrentLevel(GetLevelName(StartingLevel));
+	LevelMap.GetCurrentLevel()->LevelStreaming->OnLevelShown.AddDynamic(this, &ULevelManager::OnFirstLevelLoaded);
 }
 
 void ULevelManager::OnFirstLevelLoaded()
 {
-	LoadAdjacentLevels(LevelMap.CurrentLevel->Trigger);
-	LevelMap.CurrentLevel->LevelStreaming->OnLevelShown.RemoveDynamic(this, &ULevelManager::OnFirstLevelLoaded);
+	LoadAdjacentLevels();
+	LevelMap.GetCurrentLevel()->LevelStreaming->OnLevelShown.RemoveDynamic(this, &ULevelManager::OnFirstLevelLoaded);
 }
 
 ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
@@ -83,7 +123,7 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 	LatentAction.CallbackTarget = this;
 	LatentAction.UUID = ActionCounter;
 	LatentAction.ExecutionFunction = "StreamRandomLevel";
-	TArray<FName> Levels({ "R_Black_1", "R_Red_1", "R_White_1", "R_Wood_1" });
+	TArray<FName> Levels({ "R_Black_1", "R_Red_1", "R_White_1", "R_Wood_1", "R_Black_2", "R_Red_2", "R_White_2", "R_Wood_2" });
 	int32 LevelIndex = FMath::RandRange(0, Levels.Num() - 1);
 	bool bFoundNewLevel = false;
 	UWorld * CurrentWorld = GetWorld();
@@ -91,20 +131,16 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 	while (!bFoundNewLevel && LevelCount < Levels.Num() * 2)
 	{
 		bool bIsAlreadyLoaded = false;
-		for (ULevel * Level : CurrentWorld->GetLevels())
+		if (LevelMap.HasLevel(Levels[LevelIndex]))
 		{
-			if (Level->GetOuter()->GetFName() == Levels[LevelIndex])
-			{
-				bIsAlreadyLoaded = true;
-				LevelIndex = FMath::RandRange(0, Levels.Num() - 1);
-				break;
-			}
+			bIsAlreadyLoaded = true;
+			LevelIndex = FMath::RandRange(0, Levels.Num() - 1);
 		}
+
 		LevelCount++;
 		bFoundNewLevel = !bIsAlreadyLoaded;
 	}
 
-	LatentAction.UUID = LevelIndex;
 	ULevelStreaming* LevelStreaming = nullptr;
 
 	if (UWorld* World = GetWorld())
@@ -121,57 +157,41 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 			}
 			LatentManager.AddNewAction(LatentAction.CallbackTarget, LatentAction.UUID, NewAction);
 		}
-		else
-		{
-			int ohno = 1;
-		}
 	}
 
 	return LevelStreaming;
-}
-
-void ULevelManager::RegisterTrigger(ALevelStreamingTrigger * NewTrigger)
-{
-	if (ULevel * Level = Cast<ULevel>(NewTrigger->GetOuter()))
-	{
-		FLevelInfo* TriggerLevelInfo = LevelMap.GetLevelMapInfo(Level);
-		TriggerLevelInfo->Trigger = NewTrigger;
-	}
 }
 
 void ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
 {
 	if (ULevel * Level = Cast<ULevel>(NewDoor->GetOuter()))
 	{
-		if (FLevelInfo* DoorLevelInfo = LevelMap.GetLevelMapInfo(Level))
+		TSharedPtr<FLevelInfo> DoorLevelInfo = LevelMap.GetLevelMapInfo(Level);
+		if (DoorLevelInfo.IsValid())
 		{
-			DoorLevelInfo->LevelDoors.Add(FLevelDoor(NewDoor));
+			DoorLevelInfo->LevelDoors.Add(TSharedPtr<FLevelDoor>(new FLevelDoor(NewDoor)));
 
 			// get adjacent levels(must be just one) - look through all levels and see if this one is adjacent
 			// check all its doors - if one of them has same position, then that level is adjacent
-			FLevelInfo * ParentLevel = nullptr;
-			for (FLevelInfo & Level : LevelMap.Levels)
+			TArray<TSharedPtr<FLevelInfo>> Levels;
+			LevelMap.Levels.GenerateValueArray(Levels);
+			for (TSharedPtr<FLevelInfo> Level : Levels)
 			{
-				if (&Level == DoorLevelInfo)
+				if (Level == DoorLevelInfo)
 				{
 					continue;
 				}
-				for (FLevelDoor & Door : Level.LevelDoors)
+				for (TSharedPtr<FLevelDoor> Door : Level->LevelDoors)
 				{
-					if (Door.AdjacentLevel == DoorLevelInfo)
+					if (Door->AdjacentLevel == DoorLevelInfo)
 					{
-						ParentLevel = &Level;
-						break;
-					}
-				}
-			}
-			if (ParentLevel)
-			{
-				for (FLevelDoor & Door : ParentLevel->LevelDoors)
-				{
-					if (Door.DoorPoint->GetActorLocation() == NewDoor->GetActorLocation())
-					{
-						DoorLevelInfo->LevelDoors.Last().AdjacentLevel = ParentLevel;
+						for (TSharedPtr<FLevelDoor> Door : Level->LevelDoors)
+						{
+							if (Door->DoorPoint->GetActorLocation() == NewDoor->GetActorLocation())
+							{
+								DoorLevelInfo->LevelDoors.Last()->AdjacentLevel = Level;
+							}
+						}
 					}
 				}
 			}
@@ -183,7 +203,7 @@ void ULevelManager::UnloadLevel(FName LevelToUnload)
 {
 	FLatentActionInfo LatentAction;
 	LatentAction.CallbackTarget = this;
-	LatentAction.UUID = 124;
+	LatentAction.UUID = ActionCounter;
 	LatentAction.ExecutionFunction = "UnloadLevel";
 
 	if (UWorld* World = GetWorld())
@@ -193,58 +213,55 @@ void ULevelManager::UnloadLevel(FName LevelToUnload)
 		{
 			FCustomStreamLevelAction* NewAction = new FCustomStreamLevelAction(false, LevelToUnload, false, false, LatentAction, World);
 			LatentManager.AddNewAction(LatentAction.CallbackTarget, LatentAction.UUID, NewAction);
+			ActionCounter++;
+			LevelMap.RemoveLevel(LevelToUnload);
 		}
 	}
 }
 
-void ULevelManager::LoadAdjacentLevels(ALevelStreamingTrigger * NewTrigger)
+void ULevelManager::LoadAdjacentLevels()
 {
-	if (ULevel * Level = Cast<ULevel>(NewTrigger->GetOuter()))
+	for (TSharedPtr<FLevelDoor> LevelDoor : LevelMap.GetCurrentLevel()->LevelDoors)
 	{
-		FLevelInfo * TriggersLevelInfo = LevelMap.GetLevelMapInfo(Level);
-		for (FLevelDoor& LevelDoor : TriggersLevelInfo->LevelDoors)
+		if (!LevelDoor->AdjacentLevel)
 		{
-			if (!LevelDoor.AdjacentLevel)
+			ULevelStreaming * NewLevel = StreamRandomLevel(LevelDoor->DoorPoint->GetPointTransform());
+			if (NewLevel)
 			{
-				ULevelStreaming * NewLevel = StreamRandomLevel(LevelDoor.DoorPoint->GetPointTransform());
-				if (NewLevel)
-				{
-					LevelMap.Levels.Add(FLevelInfo(GetLevelName(NewLevel), NewLevel));
-					LevelDoor.AdjacentLevel = &LevelMap.Levels.Last();
-				}
+				LevelMap.Levels.Add(GetLevelName(NewLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(NewLevel), NewLevel)));
+				LevelDoor->AdjacentLevel = *LevelMap.Levels.Find(GetLevelName(NewLevel));
 			}
 		}
 	}
 }
 
-void ULevelManager::TrimAdjacentLevels(ALevelStreamingTrigger * NewTrigger)
+void ULevelManager::TrimAdjacentLevels()
 {
 	// get current level, iterate over adjacent, unload their adjacents
-	for (FLevelDoor& Door : LevelMap.CurrentLevel->LevelDoors)
+	for (TSharedPtr<FLevelDoor> Door : LevelMap.GetCurrentLevel()->LevelDoors)
 	{
-		if (FLevelInfo* AdjacentLevel = Door.AdjacentLevel)
+		TSharedPtr<FLevelInfo> AdjacentLevel = Door->AdjacentLevel;
+		if (AdjacentLevel.IsValid())
 		{
-			TArray<FLevelDoor> AdjacentsDoors = AdjacentLevel->LevelDoors;
-			for (FLevelDoor& AdjacentsDoor : AdjacentsDoors)
+			TArray<TSharedPtr<FLevelDoor>> AdjacentsDoors = AdjacentLevel->LevelDoors;
+			for (TSharedPtr<FLevelDoor> AdjacentsDoor : AdjacentsDoors)
 			{
-				if (AdjacentsDoor.AdjacentLevel && AdjacentsDoor.AdjacentLevel != LevelMap.CurrentLevel)
+				TSharedPtr<FLevelInfo> CurrentLevel = LevelMap.GetCurrentLevel();
+				if (AdjacentsDoor->AdjacentLevel && AdjacentsDoor->AdjacentLevel != CurrentLevel)
 				{
-					FName LevelName = AdjacentsDoor.AdjacentLevel->LevelName;
-					AdjacentsDoor.AdjacentLevel->LevelDoors.Empty();
-					AdjacentsDoor.AdjacentLevel->Trigger = nullptr;
+					FName LevelName = AdjacentsDoor->AdjacentLevel->LevelName;
+					AdjacentsDoor->AdjacentLevel->LevelDoors.Empty();
 					UnloadLevel(LevelName);
+					AdjacentsDoor->AdjacentLevel.Reset();
 				}
 			}
-			AdjacentLevel->LevelDoors.Empty();
 		}
 	}
 }
 
 void ULevelManager::SetCurrentLevel(ULevel * InLevel)
 {
-	//LevelMap.CurrentLevel->LevelStreaming = Level;
-	//LevelMap.CurrentLevel->LevelName = GetLevelName(Level);
-	LevelMap.CurrentLevel = LevelMap.GetLevelMapInfo(InLevel);
+	LevelMap.SetCurrentLevel(LevelMap.GetLevelMapInfo(InLevel)->LevelName);
 }
 
 void ULevelManager::SetNextLevel(ULevelStreaming * Level)
@@ -254,7 +271,7 @@ void ULevelManager::SetNextLevel(ULevelStreaming * Level)
 
 bool ULevelManager::IsCurrentLevel(ULevel * InLevel)
 {
-	return LevelMap.CurrentLevel->LevelStreaming->GetLoadedLevel() == InLevel;
+	return LevelMap.GetCurrentLevel()->LevelStreaming->GetLoadedLevel() == InLevel;
 }
 
 FName ULevelManager::GetLevelName(ULevelStreaming * Level)

@@ -1,19 +1,11 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
-
 #pragma once
-#include "LevelStreamingTrigger.h"
 #include "LevelStreamingDoorPoint.h"
 #include "LevelManager.generated.h"
 
-//class ALevelStreamingDoorPoint;
-//class ALevelStreamingTrigger;
-
 class FLevelDoor;
-
 
 class FLevelInfo
 {
-	//GENERATED_BODY()
 public:
 	FLevelInfo();
 	FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming);
@@ -23,23 +15,14 @@ public:
 
 	FName LevelName;
 
-	// trigger is for detecting whether the player has left/entered the level
-	// maybe i should change it to checking the level of the floor the player is standing on to allow non-square rooms
 	UPROPERTY()
-	ALevelStreamingTrigger* Trigger = nullptr;
-
-	UPROPERTY()
-	TArray<FLevelDoor> LevelDoors;
+	TArray<TSharedPtr<FLevelDoor>> LevelDoors;
 
 	void Reset();
 };
 
-
-//UCLASS()
 class FLevelDoor
 {
-	//GENERATED_BODY()
-
 public:
 	FLevelDoor();
 	FLevelDoor(ALevelStreamingDoorPoint* InDoorPoint);
@@ -48,21 +31,26 @@ public:
 	ALevelStreamingDoorPoint* DoorPoint = nullptr;
 
 	UPROPERTY()
-	FLevelInfo* AdjacentLevel = nullptr;
+		TSharedPtr<FLevelInfo> AdjacentLevel;
 };
 
-//UCLASS()
 class FLevelMap
 {
-	//GENERATED_BODY()
 public:
 	UPROPERTY()
-	TArray<FLevelInfo> Levels;
+	TMap<FName, TSharedPtr<FLevelInfo>> Levels;
 
-	UPROPERTY()
-	FLevelInfo * CurrentLevel = nullptr;
+	TSharedPtr<FLevelInfo> GetLevelMapInfo(ULevel* InLevel);
 
-	FLevelInfo * GetLevelMapInfo(ULevel* InLevel);
+	bool HasLevel(FName InName);
+
+	void RemoveLevel(FName InLevelName);
+
+	TSharedPtr<FLevelInfo> GetCurrentLevel();
+
+	void SetCurrentLevel(FName InLevelName);
+private:
+	FName CurrentLevelName;
 };
 
 UCLASS(BlueprintType, config = AdvancedLevelStreaming, meta = (DisplayName = "LevelManager"))
@@ -76,13 +64,12 @@ public:
 	void OnStartPlay();
 	void Tick(float DeltaSeconds);
 
-	void RegisterTrigger(ALevelStreamingTrigger * NewTrigger);
 	void RegisterDoor(ALevelStreamingDoorPoint * NewDoor);
 
 	ULevelStreaming* StreamRandomLevel(FTransform LevelTransform);
 	void UnloadLevel(FName LevelToUnload);
-	void LoadAdjacentLevels(ALevelStreamingTrigger * NewTrigger);
-	void TrimAdjacentLevels(ALevelStreamingTrigger * NewTrigger);
+	void LoadAdjacentLevels();
+	void TrimAdjacentLevels();
 
 	void SetCurrentLevel(ULevel * InLevel);
 	void SetNextLevel(ULevelStreaming * Level);

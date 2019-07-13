@@ -1,5 +1,3 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
-
 #pragma once
 #include "CoreMinimal.h"
 #include "GameFramework/GameModeBase.h"
@@ -15,6 +13,7 @@ public:
 	ADreamGameMode();
 	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage);
 	virtual void StartPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	UPROPERTY()
 	ULevelManager * LevelManager = nullptr;

@@ -1,12 +1,10 @@
-// Copyright 1998-2017 Epic Games, Inc. All Rights Reserved.
-
 #include "DreamGameMode.h"
 #include "LevelManager.h"
-#include "LevelStreamingStatics.h"
 
 ADreamGameMode::ADreamGameMode()
 	: Super()
 {
+	PrimaryActorTick.bCanEverTick = true;
 }
 
 void ADreamGameMode::InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage)
@@ -20,5 +18,11 @@ void ADreamGameMode::StartPlay()
 {
 	LevelManager->OnStartPlay();
 	Super::StartPlay();;
+}
+
+void ADreamGameMode::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	LevelManager->Tick(DeltaSeconds);
 }
 
