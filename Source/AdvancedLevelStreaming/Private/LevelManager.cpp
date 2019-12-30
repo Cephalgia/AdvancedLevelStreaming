@@ -164,9 +164,9 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 
 void ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
 {
-	if (ULevel * Level = Cast<ULevel>(NewDoor->GetOuter()))
+	if (ULevel * DoorLevel = Cast<ULevel>(NewDoor->GetOuter()))
 	{
-		TSharedPtr<FLevelInfo> DoorLevelInfo = LevelMap.GetLevelMapInfo(Level);
+		TSharedPtr<FLevelInfo> DoorLevelInfo = LevelMap.GetLevelMapInfo(DoorLevel);
 		if (DoorLevelInfo.IsValid())
 		{
 			DoorLevelInfo->LevelDoors.Add(TSharedPtr<FLevelDoor>(new FLevelDoor(NewDoor)));
@@ -185,9 +185,9 @@ void ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
 				{
 					if (Door->AdjacentLevel == DoorLevelInfo)
 					{
-						for (TSharedPtr<FLevelDoor> Door : Level->LevelDoors)
+						for (TSharedPtr<FLevelDoor> DoorsDoor : Level->LevelDoors)
 						{
-							if (Door->DoorPoint->GetActorLocation() == NewDoor->GetActorLocation())
+							if (DoorsDoor->DoorPoint->GetActorLocation() == NewDoor->GetActorLocation())
 							{
 								DoorLevelInfo->LevelDoors.Last()->AdjacentLevel = Level;
 							}
