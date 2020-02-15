@@ -18,6 +18,11 @@
 			"Name": "AdvancedLevelStreaming",
 			"Type": "DeveloperTool",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "ALSEditor",
+			"Type": "Editor",
+			"LoadingPhase": "Default"
 		}
 	]
 }

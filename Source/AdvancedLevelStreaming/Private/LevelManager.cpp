@@ -1,8 +1,10 @@
 
 #include "LevelManager.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/LevelStreaming.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "CustomStreamLevelAction.h"
 
 FLevelDoor::FLevelDoor()
 {
@@ -119,14 +121,32 @@ void ULevelManager::OnFirstLevelLoaded()
 
 ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 {
+	UWorld * CurrentWorld = GetWorld();
+	if (!CurrentWorld)
+	{
+		return nullptr;
+	}
+
+	TArray<FName> Levels;
+	const TArray<ULevelStreaming*> StreamingLevels = CurrentWorld->GetStreamingLevels();
+	for (ULevelStreaming* StreamingLevel : StreamingLevels)
+	{
+		FString LevelName = StreamingLevel->GetWorldAssetPackageFName().ToString();
+		int32 SlashIndex;
+		if (LevelName.FindLastChar('/', SlashIndex))
+		{
+			LevelName = LevelName.RightChop(SlashIndex + 1);
+			Levels.Add(*LevelName);
+		}
+	}
+
 	FLatentActionInfo LatentAction;
 	LatentAction.CallbackTarget = this;
 	LatentAction.UUID = ActionCounter;
 	LatentAction.ExecutionFunction = "StreamRandomLevel";
-	TArray<FName> Levels({ "R_Black_1", "R_Red_1", "R_White_1", "R_Wood_1", "R_Black_2", "R_Red_2", "R_White_2", "R_Wood_2" });
+
 	int32 LevelIndex = FMath::RandRange(0, Levels.Num() - 1);
 	bool bFoundNewLevel = false;
-	UWorld * CurrentWorld = GetWorld();
 	int32 LevelCount = 0;
 	while (!bFoundNewLevel && LevelCount < Levels.Num() * 2)
 	{
