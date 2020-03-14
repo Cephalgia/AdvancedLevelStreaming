@@ -1,8 +1,38 @@
 #pragma once
+#include "Engine/DataAsset.h"
+
 #include "LevelStreamingDoorPoint.h"
 #include "LevelManager.generated.h"
 
 class FLevelDoor;
+
+USTRUCT()
+struct FLevelSavedInfo 
+{
+
+	GENERATED_USTRUCT_BODY()
+
+	UPROPERTY(VisibleAnywhere, Category="Info")
+	FBox LevelBox;
+
+	// Door transfroms relative to the zero point
+	UPROPERTY(VisibleAnywhere, Category = "Info")
+	TArray<FTransform> DoorTransforms;
+};
+
+/**
+ * Items Database DataAsset, here we can save all of our game items
+ */
+UCLASS()
+class ADVANCEDLEVELSTREAMING_API ULevelInfoAsset : public UDataAsset
+{
+	GENERATED_BODY()
+
+public:
+	UPROPERTY(VisibleAnywhere, Category = "Info")
+	FLevelSavedInfo LevelSavedInfo;
+
+};
 
 class FLevelInfo
 {
