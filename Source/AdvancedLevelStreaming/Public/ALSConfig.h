@@ -17,4 +17,7 @@ public:
 
 	UPROPERTY(config, EditAnywhere, Category = Maps, meta = (AllowedClasses = "World"))
 	FSoftObjectPath StartingMap;
+
+	UPROPERTY(config, EditAnywhere, Category = Maps, meta = (AllowedClasses = "LevelInfoAsset"))
+	FSoftObjectPath LInfo;
 };

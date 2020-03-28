@@ -38,7 +38,7 @@ class FLevelInfo
 {
 public:
 	FLevelInfo();
-	FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming);
+	FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming, FTransform InLevelTransform);
 
 	UPROPERTY()
 	ULevelStreaming * LevelStreaming = nullptr;
@@ -47,6 +47,8 @@ public:
 
 	UPROPERTY()
 	TArray<TSharedPtr<FLevelDoor>> LevelDoors;
+
+	FTransform LevelTransform;
 
 	void Reset();
 };
@@ -61,7 +63,7 @@ public:
 	ALevelStreamingDoorPoint* DoorPoint = nullptr;
 
 	UPROPERTY()
-		TSharedPtr<FLevelInfo> AdjacentLevel;
+	TSharedPtr<FLevelInfo> AdjacentLevel;
 };
 
 class FLevelMap
@@ -96,7 +98,7 @@ public:
 
 	void RegisterDoor(ALevelStreamingDoorPoint * NewDoor);
 
-	ULevelStreaming* StreamRandomLevel(FTransform LevelTransform);
+	ULevelStreaming* StreamRandomLevel(FTransform LevelTransform, FTransform LevelRelative, FTransform& NewLevelRelative, bool bStartPlay = false);
 	void UnloadLevel(FName LevelToUnload);
 	void LoadAdjacentLevels();
 	void TrimAdjacentLevels();
@@ -115,4 +117,7 @@ private:
 	void OnFirstLevelLoaded();
 
 	int32 ActionCounter = 0;
+
+	UPROPERTY()
+	TMap<FString, ULevelInfoAsset *> LevelInfoAssets;
 };

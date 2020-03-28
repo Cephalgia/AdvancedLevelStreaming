@@ -70,7 +70,7 @@ void USaveLevelInfoCommandlet::WriteToAsset(UWorld * InLevelWorld, FBox InLevelB
 	int32 SlashIndex = -1;
 	PathName.FindLastChar('/', SlashIndex);
 	PathName = PathName.LeftChop(PathName.Len() - SlashIndex - 1);
-	PathName += "Data/LevelData";
+	PathName += "Data";
 	UPackage * Package = CreatePackage(nullptr, *PathName);
 	check(Package);
 	Package->FullyLoad();

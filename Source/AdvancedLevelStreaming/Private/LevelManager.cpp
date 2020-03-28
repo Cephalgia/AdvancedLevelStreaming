@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "CustomStreamLevelAction.h"
+#include "DrawDebugHelpers.h"
 
 FLevelDoor::FLevelDoor()
 {
@@ -21,10 +22,11 @@ FLevelInfo::FLevelInfo()
 
 }
 
-FLevelInfo::FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming)
+FLevelInfo::FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming, FTransform InLevelTransform)
 {
 	LevelName = InName;
 	LevelStreaming = InLevelStreaming;
+	LevelTransform = InLevelTransform;
 }
 
 void FLevelInfo::Reset()
@@ -80,11 +82,53 @@ ULevelManager::ULevelManager(const FObjectInitializer& ObjectInitializer)
 
 void ULevelManager::Initialize()
 {
+	UWorld * CurrentWorld = GetWorld();
+	if (!CurrentWorld)
+	{
+		return;
+	}
+
+	TArray<FName> Levels;
+	TArray<FString> LevelPaths;
+	const TArray<ULevelStreaming*> StreamingLevels = CurrentWorld->GetStreamingLevels();
+	for (ULevelStreaming* StreamingLevel : StreamingLevels)
+	{
+		FString WorldAssetPackage = StreamingLevel->GetWorldAssetPackageName();
+		int32 SlashIndex;
+		if (WorldAssetPackage.FindLastChar('/', SlashIndex))
+		{
+			FString LevelName = WorldAssetPackage.RightChop(SlashIndex + 1);
+			FSoftObjectPath LevelAssetName = WorldAssetPackage.LeftChop(WorldAssetPackage.Len() - SlashIndex) + "/Data.LevelInfo";
+			if (ULevelInfoAsset * LevelAsset = Cast<ULevelInfoAsset>(LevelAssetName.TryLoad()))
+			{
+				LevelInfoAssets.Add(LevelName, LevelAsset);
+			}
+		}
+	}
+
 
 }
 
 void ULevelManager::Tick(float DeltaSeconds)
 {
+	TArray<TSharedPtr<FLevelInfo>> MapValues;
+	LevelMap.Levels.GenerateValueArray(MapValues);
+	for (TSharedPtr<FLevelInfo> LevelInfo : MapValues)
+	{
+		bool bHasNonEmptyDoor = false;
+		for (TSharedPtr<FLevelDoor> Door : LevelInfo->LevelDoors)
+		{
+			if (Door->AdjacentLevel.IsValid())
+			{
+				bHasNonEmptyDoor = true;
+			}
+		}
+		if (!bHasNonEmptyDoor)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("Level %s has all doors empty"), *LevelInfo->LevelName.ToString());
+		}
+	}
+
 	if (ACharacter * PlayerCharacter = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0))
 	{
 		if (UCharacterMovementComponent * MC = Cast<UCharacterMovementComponent>(PlayerCharacter->GetMovementComponent()))
@@ -106,9 +150,15 @@ void ULevelManager::Tick(float DeltaSeconds)
 
 void ULevelManager::OnStartPlay()
 {
-	ULevelStreaming * StartingLevel = StreamRandomLevel(FTransform(FVector(0.f, 200.f, -90.f)));
+	FTransform StartTransform = FTransform(FVector::ZeroVector);
+	if (APawn * PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0))
+	{
+		StartTransform = PlayerPawn->GetActorTransform();
+	}
+	FTransform NewLevelTransform;
+	ULevelStreaming * StartingLevel = StreamRandomLevel(StartTransform, FTransform::Identity, NewLevelTransform, true);
 	LevelMap.Levels.Empty();
-	LevelMap.Levels.Add(GetLevelName(StartingLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(StartingLevel), StartingLevel)));
+	LevelMap.Levels.Add(GetLevelName(StartingLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(StartingLevel), StartingLevel, NewLevelTransform)));
 	LevelMap.SetCurrentLevel(GetLevelName(StartingLevel));
 	LevelMap.GetCurrentLevel()->LevelStreaming->OnLevelShown.AddDynamic(this, &ULevelManager::OnFirstLevelLoaded);
 }
@@ -119,7 +169,7 @@ void ULevelManager::OnFirstLevelLoaded()
 	LevelMap.GetCurrentLevel()->LevelStreaming->OnLevelShown.RemoveDynamic(this, &ULevelManager::OnFirstLevelLoaded);
 }
 
-ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
+ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform, FTransform LevelRelative, FTransform& NewLevelRelative, bool bStartPlay)
 {
 	UWorld * CurrentWorld = GetWorld();
 	if (!CurrentWorld)
@@ -131,7 +181,7 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 	const TArray<ULevelStreaming*> StreamingLevels = CurrentWorld->GetStreamingLevels();
 	for (ULevelStreaming* StreamingLevel : StreamingLevels)
 	{
-		FString LevelName = StreamingLevel->GetWorldAssetPackageFName().ToString();
+		FString LevelName = StreamingLevel->GetWorldAssetPackageName();
 		int32 SlashIndex;
 		if (LevelName.FindLastChar('/', SlashIndex))
 		{
@@ -145,7 +195,9 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 	LatentAction.UUID = ActionCounter;
 	LatentAction.ExecutionFunction = "StreamRandomLevel";
 
-	int32 LevelIndex = FMath::RandRange(0, Levels.Num() - 1);
+	FRandomStream RandomStream(FPlatformTime::Seconds());
+
+	int32 LevelIndex = RandomStream.RandRange(0, Levels.Num() - 1);
 	bool bFoundNewLevel = false;
 	int32 LevelCount = 0;
 	while (!bFoundNewLevel && LevelCount < Levels.Num() * 2)
@@ -154,7 +206,7 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 		if (LevelMap.HasLevel(Levels[LevelIndex]))
 		{
 			bIsAlreadyLoaded = true;
-			LevelIndex = FMath::RandRange(0, Levels.Num() - 1);
+			LevelIndex = RandomStream.RandRange(0, Levels.Num() - 1);
 		}
 
 		LevelCount++;
@@ -162,6 +214,39 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 	}
 
 	ULevelStreaming* LevelStreaming = nullptr;
+
+	// Choose door
+	FTransform DoorTransform = FTransform::Identity;
+	ULevelInfoAsset ** LevelAsset = LevelInfoAssets.Find(Levels[LevelIndex].ToString());
+	if (LevelAsset)
+	{
+		if (bStartPlay)
+		{
+			FVector Diff = LevelTransform.GetLocation() - (*LevelAsset)->LevelSavedInfo.LevelBox.GetCenter();
+			DoorTransform = FTransform(Diff);
+		}
+		else
+		{
+			FLevelSavedInfo LevelInfo = (*LevelAsset)->LevelSavedInfo;
+			int32 DoorIndex = RandomStream.RandRange(0, LevelInfo.DoorTransforms.Num() - 1);
+
+			FTransform NewDoorTransform = LevelInfo.DoorTransforms[DoorIndex];
+			float DoorYaw = LevelTransform.GetRotation().Rotator().Yaw - NewDoorTransform.GetRotation().Rotator().Yaw + 180.f;
+			FVector DoorLocation = NewDoorTransform.GetLocation();
+			FRotator RelativeRot(0.f, DoorYaw, 0.f);
+			FVector NewDoorLocation = RelativeRot.RotateVector(DoorLocation);
+			FVector CurDoorLocal = LevelTransform.GetLocation() - LevelRelative.GetLocation();
+			FVector Relative = CurDoorLocal - NewDoorLocation + LevelRelative.GetLocation();
+			DoorTransform.SetLocation(Relative);
+			DoorTransform.SetRotation(RelativeRot.Quaternion());
+		}
+		NewLevelRelative = DoorTransform;
+	}
+	else
+	{
+		//error
+		return nullptr;
+	}
 
 	if (UWorld* World = GetWorld())
 	{
@@ -171,7 +256,7 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform)
 			FCustomStreamLevelAction* NewAction = new FCustomStreamLevelAction(true, Levels[LevelIndex], true, false, LatentAction, World);
 			if (NewAction->Level)
 			{
-				NewAction->Level->LevelTransform = LevelTransform;
+				NewAction->Level->LevelTransform = DoorTransform;
 				LevelStreaming = NewAction->Level;
 				ActionCounter++;
 			}
@@ -207,7 +292,7 @@ void ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
 					{
 						for (TSharedPtr<FLevelDoor> DoorsDoor : Level->LevelDoors)
 						{
-							if (DoorsDoor->DoorPoint->GetActorLocation() == NewDoor->GetActorLocation())
+							if ((DoorsDoor->DoorPoint->GetActorLocation() - NewDoor->GetActorLocation()).SizeSquared() <= KINDA_SMALL_NUMBER)
 							{
 								DoorLevelInfo->LevelDoors.Last()->AdjacentLevel = Level;
 							}
@@ -241,14 +326,17 @@ void ULevelManager::UnloadLevel(FName LevelToUnload)
 
 void ULevelManager::LoadAdjacentLevels()
 {
+	UE_LOG(LogTemp, Warning, TEXT("Loading adjacent levels"));
 	for (TSharedPtr<FLevelDoor> LevelDoor : LevelMap.GetCurrentLevel()->LevelDoors)
 	{
 		if (!LevelDoor->AdjacentLevel)
 		{
-			ULevelStreaming * NewLevel = StreamRandomLevel(LevelDoor->DoorPoint->GetPointTransform());
+			FTransform NewLevelsTransform;
+			ULevelStreaming * NewLevel = StreamRandomLevel(LevelDoor->DoorPoint->GetPointTransform(), LevelMap.GetCurrentLevel()->LevelTransform, NewLevelsTransform);
 			if (NewLevel)
 			{
-				LevelMap.Levels.Add(GetLevelName(NewLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(NewLevel), NewLevel)));
+				UE_LOG(LogTemp, Warning, TEXT("Loading %s"), *GetLevelName(NewLevel).ToString());
+				LevelMap.Levels.Add(GetLevelName(NewLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(NewLevel), NewLevel, NewLevelsTransform)));
 				LevelDoor->AdjacentLevel = *LevelMap.Levels.Find(GetLevelName(NewLevel));
 			}
 		}
@@ -257,12 +345,14 @@ void ULevelManager::LoadAdjacentLevels()
 
 void ULevelManager::TrimAdjacentLevels()
 {
+	UE_LOG(LogTemp, Warning, TEXT("Trimming adjacent levels"));
 	// get current level, iterate over adjacent, unload their adjacents
 	for (TSharedPtr<FLevelDoor> Door : LevelMap.GetCurrentLevel()->LevelDoors)
 	{
 		TSharedPtr<FLevelInfo> AdjacentLevel = Door->AdjacentLevel;
 		if (AdjacentLevel.IsValid())
 		{
+			UE_LOG(LogTemp, Warning, TEXT("Trimming levels of %s"), *AdjacentLevel->LevelName.ToString());
 			TArray<TSharedPtr<FLevelDoor>> AdjacentsDoors = AdjacentLevel->LevelDoors;
 			for (TSharedPtr<FLevelDoor> AdjacentsDoor : AdjacentsDoors)
 			{
@@ -270,6 +360,11 @@ void ULevelManager::TrimAdjacentLevels()
 				if (AdjacentsDoor->AdjacentLevel && AdjacentsDoor->AdjacentLevel != CurrentLevel)
 				{
 					FName LevelName = AdjacentsDoor->AdjacentLevel->LevelName;
+					UE_LOG(LogTemp, Warning, TEXT("Unloading %s"), *LevelName.ToString());
+					if (AdjacentsDoor->AdjacentLevel->LevelDoors.Num() > 0)
+					{
+						int k = 0;
+					}
 					AdjacentsDoor->AdjacentLevel->LevelDoors.Empty();
 					UnloadLevel(LevelName);
 					AdjacentsDoor->AdjacentLevel.Reset();
@@ -281,6 +376,7 @@ void ULevelManager::TrimAdjacentLevels()
 
 void ULevelManager::SetCurrentLevel(ULevel * InLevel)
 {
+	UE_LOG(LogTemp, Warning, TEXT("Current level set to %s"), *LevelMap.GetLevelMapInfo(InLevel)->LevelName.ToString());
 	LevelMap.SetCurrentLevel(LevelMap.GetLevelMapInfo(InLevel)->LevelName);
 }
 
