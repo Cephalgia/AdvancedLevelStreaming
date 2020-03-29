@@ -10,6 +10,7 @@ ALevelStreamingDoorPoint::ALevelStreamingDoorPoint(const FObjectInitializer& Obj
 	LevelStreamingComponent = CreateDefaultSubobject<UArrowComponent>(TEXT("Level Transform"));
 	LevelStreamingComponent->SetupAttachment(RootComponent);
 	LevelStreamingComponent->bEditableWhenInherited = true;
+	bRelevantForLevelBounds = false;
 }
 
 void ALevelStreamingDoorPoint::BeginPlay()

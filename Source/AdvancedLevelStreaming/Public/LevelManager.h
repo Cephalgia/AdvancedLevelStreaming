@@ -108,6 +108,8 @@ public:
 
 	bool IsCurrentLevel(ULevel * InLevel);
 
+	FBox TransformLevelBox(FBox InBox, FTransform InTransform);
+
 private:
 	FLevelMap LevelMap;
 
@@ -119,5 +121,5 @@ private:
 	int32 ActionCounter = 0;
 
 	UPROPERTY()
-	TMap<FString, ULevelInfoAsset *> LevelInfoAssets;
+	TMap<FName, ULevelInfoAsset *> LevelInfoAssets;
 };

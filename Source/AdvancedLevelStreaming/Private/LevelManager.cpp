@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "CustomStreamLevelAction.h"
+#include "Engine/LevelBounds.h"
 #include "DrawDebugHelpers.h"
 
 FLevelDoor::FLevelDoor()
@@ -101,7 +102,7 @@ void ULevelManager::Initialize()
 			FSoftObjectPath LevelAssetName = WorldAssetPackage.LeftChop(WorldAssetPackage.Len() - SlashIndex) + "/Data.LevelInfo";
 			if (ULevelInfoAsset * LevelAsset = Cast<ULevelInfoAsset>(LevelAssetName.TryLoad()))
 			{
-				LevelInfoAssets.Add(LevelName, LevelAsset);
+				LevelInfoAssets.Add(*LevelName, LevelAsset);
 			}
 		}
 	}
@@ -111,24 +112,6 @@ void ULevelManager::Initialize()
 
 void ULevelManager::Tick(float DeltaSeconds)
 {
-	TArray<TSharedPtr<FLevelInfo>> MapValues;
-	LevelMap.Levels.GenerateValueArray(MapValues);
-	for (TSharedPtr<FLevelInfo> LevelInfo : MapValues)
-	{
-		bool bHasNonEmptyDoor = false;
-		for (TSharedPtr<FLevelDoor> Door : LevelInfo->LevelDoors)
-		{
-			if (Door->AdjacentLevel.IsValid())
-			{
-				bHasNonEmptyDoor = true;
-			}
-		}
-		if (!bHasNonEmptyDoor)
-		{
-			UE_LOG(LogTemp, Warning, TEXT("Level %s has all doors empty"), *LevelInfo->LevelName.ToString());
-		}
-	}
-
 	if (ACharacter * PlayerCharacter = UGameplayStatics::GetPlayerCharacter(GetWorld(), 0))
 	{
 		if (UCharacterMovementComponent * MC = Cast<UCharacterMovementComponent>(PlayerCharacter->GetMovementComponent()))
@@ -178,16 +161,22 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform, FTr
 	}
 
 	TArray<FName> Levels;
-	const TArray<ULevelStreaming*> StreamingLevels = CurrentWorld->GetStreamingLevels();
-	for (ULevelStreaming* StreamingLevel : StreamingLevels)
+	LevelInfoAssets.GenerateKeyArray(Levels);
+	//eliminate loaded levels
+	TArray<FName> LoadedLevels;
+	LevelMap.Levels.GenerateKeyArray(LoadedLevels);
+	for (FName LoadedLevel : LoadedLevels)
 	{
-		FString LevelName = StreamingLevel->GetWorldAssetPackageName();
-		int32 SlashIndex;
-		if (LevelName.FindLastChar('/', SlashIndex))
-		{
-			LevelName = LevelName.RightChop(SlashIndex + 1);
-			Levels.Add(*LevelName);
-		}
+		Levels.Remove(LoadedLevel);
+	}
+	//shuffle remaining array
+	FRandomStream RandomStream(FPlatformTime::Seconds());
+	for (int i = Levels.Num() - 1; i > 0; --i)
+	{
+		int j = RandomStream.RandRange(0, i);
+		FName Buffer = Levels[i];
+		Levels[i] = Levels[j];
+		Levels[j] = Buffer;
 	}
 
 	FLatentActionInfo LatentAction;
@@ -195,65 +184,99 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform, FTr
 	LatentAction.UUID = ActionCounter;
 	LatentAction.ExecutionFunction = "StreamRandomLevel";
 
-	FRandomStream RandomStream(FPlatformTime::Seconds());
-
-	int32 LevelIndex = RandomStream.RandRange(0, Levels.Num() - 1);
-	bool bFoundNewLevel = false;
-	int32 LevelCount = 0;
-	while (!bFoundNewLevel && LevelCount < Levels.Num() * 2)
-	{
-		bool bIsAlreadyLoaded = false;
-		if (LevelMap.HasLevel(Levels[LevelIndex]))
-		{
-			bIsAlreadyLoaded = true;
-			LevelIndex = RandomStream.RandRange(0, Levels.Num() - 1);
-		}
-
-		LevelCount++;
-		bFoundNewLevel = !bIsAlreadyLoaded;
-	}
-
-	ULevelStreaming* LevelStreaming = nullptr;
-
-	// Choose door
+	//select first fitting level
 	FTransform DoorTransform = FTransform::Identity;
-	ULevelInfoAsset ** LevelAsset = LevelInfoAssets.Find(Levels[LevelIndex].ToString());
-	if (LevelAsset)
+	FName ChosenLevel = NAME_None;
+	for (FName LevelName : Levels)
 	{
-		if (bStartPlay)
+		ULevelInfoAsset ** LevelAsset = LevelInfoAssets.Find(LevelName);
+		if (LevelAsset)
 		{
-			FVector Diff = LevelTransform.GetLocation() - (*LevelAsset)->LevelSavedInfo.LevelBox.GetCenter();
-			DoorTransform = FTransform(Diff);
+			FBox LevelBox = (*LevelAsset)->LevelSavedInfo.LevelBox;
+			if (bStartPlay)
+			{
+				ChosenLevel = LevelName;
+				FVector Diff = LevelTransform.GetLocation() - (*LevelAsset)->LevelSavedInfo.LevelBox.GetCenter();
+				DoorTransform = FTransform(Diff);
+			}
+			else
+			{
+				TArray<FTransform> DoorTransforms = (*LevelAsset)->LevelSavedInfo.DoorTransforms;
+				//shuffle door array
+				for (int i = DoorTransforms.Num() - 1; i > 0; --i)
+				{
+					int j = RandomStream.RandRange(0, i);
+					FTransform Buffer = DoorTransforms[i];
+					DoorTransforms[i] = DoorTransforms[j];
+					DoorTransforms[j] = Buffer;
+				}
+
+				for (FTransform NewDoorTransform : DoorTransforms)
+				{
+					float DoorYaw = LevelTransform.GetRotation().Rotator().Yaw - NewDoorTransform.GetRotation().Rotator().Yaw + 180.f;
+					FVector DoorLocation = NewDoorTransform.GetLocation();
+					FRotator RelativeRot(0.f, DoorYaw, 0.f);
+					FVector NewDoorLocation = RelativeRot.RotateVector(DoorLocation);
+					FVector CurDoorLocal = LevelTransform.GetLocation() - LevelRelative.GetLocation();
+					FVector Relative = CurDoorLocal - NewDoorLocation + LevelRelative.GetLocation();
+					DoorTransform.SetLocation(Relative);
+					DoorTransform.SetRotation(RelativeRot.Quaternion());
+
+					FBox CheckBox = TransformLevelBox(LevelBox, DoorTransform);
+
+					LevelBox = LevelBox.ExpandBy(-12.f);
+					TArray<TSharedPtr<FLevelInfo>> LoadedLevelsInfo;
+					LevelMap.Levels.GenerateValueArray(LoadedLevelsInfo);
+					bool bIntersectsAnything = false;
+					for (TSharedPtr<FLevelInfo> LevelInfo : LoadedLevelsInfo)
+					{
+						FBox OtherBounds;
+						ULevelInfoAsset ** OtherLevelAsset = LevelInfoAssets.Find(LevelInfo->LevelName);
+						if (OtherLevelAsset)
+						{
+							OtherBounds = (*OtherLevelAsset)->LevelSavedInfo.LevelBox;
+							FTransform OtherTransform = LevelInfo->LevelStreaming->LevelTransform;
+							OtherBounds = TransformLevelBox(OtherBounds, OtherTransform);
+							if (CheckBox.Intersect(OtherBounds))
+							{
+								bIntersectsAnything = true;
+							}
+						}
+					}
+
+					if (!bIntersectsAnything)
+					{
+						ChosenLevel = LevelName;
+						NewLevelRelative = DoorTransform;
+						break;
+					}
+				}
+			}
+
+			if (ChosenLevel != NAME_None)
+			{
+				break;
+			}
 		}
 		else
 		{
-			FLevelSavedInfo LevelInfo = (*LevelAsset)->LevelSavedInfo;
-			int32 DoorIndex = RandomStream.RandRange(0, LevelInfo.DoorTransforms.Num() - 1);
-
-			FTransform NewDoorTransform = LevelInfo.DoorTransforms[DoorIndex];
-			float DoorYaw = LevelTransform.GetRotation().Rotator().Yaw - NewDoorTransform.GetRotation().Rotator().Yaw + 180.f;
-			FVector DoorLocation = NewDoorTransform.GetLocation();
-			FRotator RelativeRot(0.f, DoorYaw, 0.f);
-			FVector NewDoorLocation = RelativeRot.RotateVector(DoorLocation);
-			FVector CurDoorLocal = LevelTransform.GetLocation() - LevelRelative.GetLocation();
-			FVector Relative = CurDoorLocal - NewDoorLocation + LevelRelative.GetLocation();
-			DoorTransform.SetLocation(Relative);
-			DoorTransform.SetRotation(RelativeRot.Quaternion());
+			return nullptr;
 		}
-		NewLevelRelative = DoorTransform;
 	}
-	else
+
+	if (ChosenLevel == NAME_None)
 	{
-		//error
 		return nullptr;
 	}
+
+	ULevelStreaming* LevelStreaming = nullptr;
 
 	if (UWorld* World = GetWorld())
 	{
 		FLatentActionManager& LatentManager = World->GetLatentActionManager();
 		if (LatentManager.FindExistingAction<FCustomStreamLevelAction>(LatentAction.CallbackTarget, LatentAction.UUID) == nullptr)
 		{
-			FCustomStreamLevelAction* NewAction = new FCustomStreamLevelAction(true, Levels[LevelIndex], true, false, LatentAction, World);
+			FCustomStreamLevelAction* NewAction = new FCustomStreamLevelAction(true, ChosenLevel, true, false, LatentAction, World);
 			if (NewAction->Level)
 			{
 				NewAction->Level->LevelTransform = DoorTransform;
@@ -397,4 +420,16 @@ FName ULevelManager::GetLevelName(ULevelStreaming * Level)
 	LevelAssetName.FindLastChar('/', LastSlash);
 
 	return FName(*LevelAssetName.RightChop(LastSlash + 1));
+}
+
+FBox ULevelManager::TransformLevelBox(FBox InBox, FTransform InTransform)
+{
+	InBox.Min = InTransform.TransformVector(InBox.Min) + InTransform.GetLocation();
+	InBox.Max = InTransform.TransformVector(InBox.Max) + InTransform.GetLocation();
+	FVector Center = InBox.GetCenter();
+	FVector Extent = InBox.GetExtent();
+	Extent = Extent.GetAbs();
+	InBox.Min = Center - Extent;
+	InBox.Max = Center + Extent;
+	return InBox;
 }
