@@ -96,7 +96,7 @@ public:
 	void OnStartPlay();
 	void Tick(float DeltaSeconds);
 
-	void RegisterDoor(ALevelStreamingDoorPoint * NewDoor);
+	bool RegisterDoor(ALevelStreamingDoorPoint * NewDoor);
 
 	ULevelStreaming* StreamRandomLevel(FTransform LevelTransform, FTransform LevelRelative, FTransform& NewLevelRelative, bool bStartPlay = false);
 	void UnloadLevel(FName LevelToUnload);

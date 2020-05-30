@@ -10,18 +10,34 @@ class ADVANCEDLEVELSTREAMING_API ALevelStreamingDoorPoint : public AActor
 
 	UPROPERTY()
 	UStaticMeshComponent * DoorStaticMesh;
-	// Door component (closing and opening)
+
 	UPROPERTY(EditAnywhere, Category="LevelStreaming")
 	FTransform LevelStreamingPointRelative;
 
 	UPROPERTY(VisibleAnywhere, Category="LevelTransform")
 	UArrowComponent * LevelStreamingComponent;
 
+	bool bLocked = true; // can it open at the moment
+
 public:
 
 	virtual void BeginPlay() override;
+	virtual void NotifyHit(class UPrimitiveComponent* MyComp, AActor* Other, class UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit) override;
+	virtual void Tick(float DeltaTime) override;
 
 	FTransform GetPointTransform();
 
-	bool bLoadedRandom = false;
+	UFUNCTION()
+	void OnDoorLevelShown();
+
+	void EnableDoor();
+	void DisableDoor();
+
+protected:
+	bool bActive; // this door is visible
+	bool bTryEnable = false; // if player is standing near it, try enabling next tick
+
+	float CurrentAngle = 0.f;
+	float TargetAngle = 0.f;
+	float InterpSpeed = 0.5f;
 };

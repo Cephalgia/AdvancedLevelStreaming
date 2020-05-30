@@ -290,7 +290,7 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform, FTr
 	return LevelStreaming;
 }
 
-void ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
+bool ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
 {
 	if (ULevel * DoorLevel = Cast<ULevel>(NewDoor->GetOuter()))
 	{
@@ -318,6 +318,7 @@ void ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
 							if ((DoorsDoor->DoorPoint->GetActorLocation() - NewDoor->GetActorLocation()).SizeSquared() <= KINDA_SMALL_NUMBER)
 							{
 								DoorLevelInfo->LevelDoors.Last()->AdjacentLevel = Level;
+								return true;
 							}
 						}
 					}
@@ -325,6 +326,7 @@ void ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
 			}
 		}
 	}
+	return false;
 }
 
 void ULevelManager::UnloadLevel(FName LevelToUnload)
@@ -361,6 +363,7 @@ void ULevelManager::LoadAdjacentLevels()
 				UE_LOG(LogTemp, Warning, TEXT("Loading %s"), *GetLevelName(NewLevel).ToString());
 				LevelMap.Levels.Add(GetLevelName(NewLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(NewLevel), NewLevel, NewLevelsTransform)));
 				LevelDoor->AdjacentLevel = *LevelMap.Levels.Find(GetLevelName(NewLevel));
+				NewLevel->OnLevelShown.AddUniqueDynamic(LevelDoor->DoorPoint, &ALevelStreamingDoorPoint::OnDoorLevelShown);
 			}
 		}
 	}
@@ -384,13 +387,10 @@ void ULevelManager::TrimAdjacentLevels()
 				{
 					FName LevelName = AdjacentsDoor->AdjacentLevel->LevelName;
 					UE_LOG(LogTemp, Warning, TEXT("Unloading %s"), *LevelName.ToString());
-					if (AdjacentsDoor->AdjacentLevel->LevelDoors.Num() > 0)
-					{
-						int k = 0;
-					}
 					AdjacentsDoor->AdjacentLevel->LevelDoors.Empty();
 					UnloadLevel(LevelName);
 					AdjacentsDoor->AdjacentLevel.Reset();
+					AdjacentsDoor->DoorPoint->bLocked = true;
 				}
 			}
 		}
@@ -399,8 +399,16 @@ void ULevelManager::TrimAdjacentLevels()
 
 void ULevelManager::SetCurrentLevel(ULevel * InLevel)
 {
+	for (auto LevelDoor : LevelMap.GetCurrentLevel()->LevelDoors)
+	{
+		LevelDoor->DoorPoint->DisableDoor();
+	}
 	UE_LOG(LogTemp, Warning, TEXT("Current level set to %s"), *LevelMap.GetLevelMapInfo(InLevel)->LevelName.ToString());
 	LevelMap.SetCurrentLevel(LevelMap.GetLevelMapInfo(InLevel)->LevelName);
+	for (auto LevelDoor : LevelMap.GetCurrentLevel()->LevelDoors)
+	{
+		LevelDoor->DoorPoint->EnableDoor();
+	}
 }
 
 void ULevelManager::SetNextLevel(ULevelStreaming * Level)

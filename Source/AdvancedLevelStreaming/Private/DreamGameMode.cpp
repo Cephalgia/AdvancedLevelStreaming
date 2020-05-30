@@ -16,13 +16,15 @@ void ADreamGameMode::InitGame(const FString& MapName, const FString& Options, FS
 
 void ADreamGameMode::StartPlay()
 {
-	LevelManager->OnStartPlay();
+	if (LevelManager)
+		LevelManager->OnStartPlay();
 	Super::StartPlay();;
 }
 
 void ADreamGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-	LevelManager->Tick(DeltaSeconds);
+	if (LevelManager)
+		LevelManager->Tick(DeltaSeconds);
 }
 
