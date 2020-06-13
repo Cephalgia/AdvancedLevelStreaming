@@ -315,7 +315,7 @@ bool ULevelManager::RegisterDoor(ALevelStreamingDoorPoint * NewDoor)
 					{
 						for (TSharedPtr<FLevelDoor> DoorsDoor : Level->LevelDoors)
 						{
-							if ((DoorsDoor->DoorPoint->GetActorLocation() - NewDoor->GetActorLocation()).SizeSquared() <= KINDA_SMALL_NUMBER)
+							if ((DoorsDoor->DoorPoint->GetActorLocation() - NewDoor->GetActorLocation()).SizeSquared() <= FMath::Square(10.f))
 							{
 								DoorLevelInfo->LevelDoors.Last()->AdjacentLevel = Level;
 								return true;

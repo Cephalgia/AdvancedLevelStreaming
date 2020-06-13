@@ -33,6 +33,8 @@ public:
 	void EnableDoor();
 	void DisableDoor();
 
+	void OpenDoor();
+
 protected:
 	bool bActive; // this door is visible
 	bool bTryEnable = false; // if player is standing near it, try enabling next tick

@@ -4,6 +4,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 
+#include "DrawDebugHelpers.h"
 
 ALevelStreamingDoorPoint::ALevelStreamingDoorPoint(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -41,6 +42,10 @@ void ALevelStreamingDoorPoint::BeginPlay()
 				{
 					DoorStaticMesh->SetVisibility(false);
 					DoorStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					for (auto Component : GetComponents())
+					{
+						Component->PrimaryComponentTick.SetTickFunctionEnable(false);
+					}
 				}
 			}
 		}
@@ -59,7 +64,7 @@ void ALevelStreamingDoorPoint::Tick(float DeltaTime)
 	if (FMath::Abs(CurrentAngle - TargetAngle) > 1.f)
 	{
 		CurrentAngle = FMath::FInterpConstantTo(CurrentAngle, TargetAngle, DeltaTime, 100.f);
-		FRotator CurrentRotation = DoorStaticMesh->RelativeRotation;
+		FRotator CurrentRotation = DoorStaticMesh->GetRelativeRotation();
 		//DoorStaticMesh->MoveComponent(FVector::ZeroVector, FRotator(CurrentRotation.Pitch, CurrentAngle, CurrentRotation.Roll), false);
 		DoorStaticMesh->SetRelativeRotation(FRotator(CurrentRotation.Pitch, CurrentAngle, CurrentRotation.Roll));
 
@@ -82,11 +87,25 @@ void ALevelStreamingDoorPoint::Tick(float DeltaTime)
 		bTryEnable = false;
 		EnableDoor();
 	}
+
+	/*float Radius = 20.f;
+	if (!DoorStaticMesh->IsVisible())
+	{
+		Radius = 10.f;
+	}
+	FColor DebugColor = bLocked ? FColor::Red : FColor::Green;
+
+	DrawDebugSphere(GetWorld(), GetActorLocation() + FVector(0.f, 0.f, 60.f), Radius, 8, DebugColor);*/
 }
 
 void ALevelStreamingDoorPoint::NotifyHit(class UPrimitiveComponent* MyComp, AActor* Other, class UPrimitiveComponent* OtherComp, bool bSelfMoved, FVector HitLocation, FVector HitNormal, FVector NormalImpulse, const FHitResult& Hit)
 {
 	Super::NotifyHit(MyComp, Other, OtherComp, bSelfMoved, HitLocation, HitNormal, NormalImpulse, Hit);
+	//OpenDoor();
+}
+
+void ALevelStreamingDoorPoint::OpenDoor()
+{
 	if (!bLocked && CurrentAngle == 0.f)
 	{
 		bool bSide = false; // check if current level is door level, if true - TargetAngle will be +90, else -90
@@ -128,6 +147,11 @@ void ALevelStreamingDoorPoint::EnableDoor()
 		{
 			bTryEnable = true;
 		}
+
+		for (auto Component : GetComponents())
+		{
+			Component->PrimaryComponentTick.SetTickFunctionEnable(true);
+		}
 	}
 }
 
@@ -135,4 +159,9 @@ void ALevelStreamingDoorPoint::DisableDoor()
 {
 	DoorStaticMesh->SetVisibility(false);
 	DoorStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+	for (auto Component : GetComponents())
+	{
+		Component->PrimaryComponentTick.SetTickFunctionEnable(false);
+	}
 }

@@ -26,7 +26,8 @@ public class AdvancedLevelStreaming : ModuleRules
 			new string[]
 			{
 				"Core",
-                "Engine"
+                "Engine",
+				"SomnambulicCore"
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
