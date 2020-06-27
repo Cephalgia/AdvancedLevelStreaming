@@ -1,6 +1,8 @@
 #pragma once
 #include "Engine/DataAsset.h"
 
+#include "ManagerBase.h"
+
 #include "LevelStreamingDoorPoint.h"
 #include "LevelManager.generated.h"
 
@@ -86,15 +88,15 @@ private:
 };
 
 UCLASS(BlueprintType, config = AdvancedLevelStreaming, meta = (DisplayName = "LevelManager"))
-class ADVANCEDLEVELSTREAMING_API ULevelManager : public UObject
+class ADVANCEDLEVELSTREAMING_API ULevelManager : public UManagerBase
 {
 	GENERATED_UCLASS_BODY()
 
 public:
-	void Initialize();
+	virtual void Initialize() override;
 
-	void OnStartPlay();
-	void Tick(float DeltaSeconds);
+	virtual void OnStartPlay() override;
+	virtual void Tick(float DeltaSeconds) override;
 
 	bool RegisterDoor(ALevelStreamingDoorPoint * NewDoor);
 

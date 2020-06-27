@@ -23,7 +23,7 @@ void ALevelStreamingDoorPoint::BeginPlay()
 	DoorStaticMesh = Cast<UStaticMeshComponent>(GetComponentByClass(UStaticMeshComponent::StaticClass()));
 	if (ADreamGameMode * GameMode = Cast<ADreamGameMode>(GetWorld()->GetAuthGameMode()))
 	{
-		if (ULevelManager * LevelManager = GameMode->LevelManager)
+		if (ULevelManager * LevelManager = GameMode->GetManager<ULevelManager>())
 		{
 			if (LevelManager->RegisterDoor(this))
 			{
@@ -36,7 +36,7 @@ void ALevelStreamingDoorPoint::BeginPlay()
 	{
 		if (ADreamGameMode * GameMode = Cast<ADreamGameMode>(GetWorld()->GetAuthGameMode()))
 		{
-			if (ULevelManager * LevelManager = GameMode->LevelManager)
+			if (ULevelManager * LevelManager = GameMode->GetManager<ULevelManager>())
 			{
 				if (!LevelManager->IsCurrentLevel(DoorLevel))
 				{
@@ -113,7 +113,7 @@ void ALevelStreamingDoorPoint::OpenDoor()
 		{
 			if (ADreamGameMode * GameMode = Cast<ADreamGameMode>(GetWorld()->GetAuthGameMode()))
 			{
-				if (ULevelManager * LevelManager = GameMode->LevelManager)
+				if (ULevelManager * LevelManager = GameMode->GetManager<ULevelManager>())
 				{
 					bSide = LevelManager->IsCurrentLevel(DoorLevel);
 				}
