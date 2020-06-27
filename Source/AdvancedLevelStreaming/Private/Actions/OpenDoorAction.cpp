@@ -11,6 +11,8 @@ UOpenDoorAction::UOpenDoorAction(const FObjectInitializer& ObjectInitializer)
 
 void UOpenDoorAction::PerformAction(UInteractionComponent * InComponent)
 {
+	Super::PerformAction(InComponent);
+
 	if (ALevelStreamingDoorPoint * Door = Cast<ALevelStreamingDoorPoint>(InComponent->GetOwner()))
 	{
 		Door->OpenDoor();
