@@ -80,7 +80,7 @@ public:
 
 	void RemoveLevel(FName InLevelName);
 
-	TSharedPtr<FLevelInfo> GetCurrentLevel();
+	TSharedPtr<FLevelInfo> GetCurrentLevel() const;
 
 	void SetCurrentLevel(FName InLevelName);
 private:
@@ -109,6 +109,7 @@ public:
 	void SetNextLevel(ULevelStreaming * Level);
 
 	bool IsCurrentLevel(ULevel * InLevel);
+	ULevel * GetCurrentLevel() const;
 
 	FBox TransformLevelBox(FBox InBox, FTransform InTransform);
 

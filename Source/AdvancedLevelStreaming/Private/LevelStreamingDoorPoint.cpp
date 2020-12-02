@@ -38,7 +38,7 @@ void ALevelStreamingDoorPoint::BeginPlay()
 		{
 			if (ULevelManager * LevelManager = GameMode->GetManager<ULevelManager>())
 			{
-				if (!LevelManager->IsCurrentLevel(DoorLevel))
+				if (!LevelManager->IsCurrentLevel(DoorLevel) && DoorStaticMesh)
 				{
 					DoorStaticMesh->SetVisibility(false);
 					DoorStaticMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);

@@ -64,9 +64,9 @@ void FLevelMap::RemoveLevel(FName InLevelName)
 	Levels.Remove(InLevelName);
 }
 
-TSharedPtr<FLevelInfo> FLevelMap::GetCurrentLevel()
+TSharedPtr<FLevelInfo> FLevelMap::GetCurrentLevel() const
 {
-	TSharedPtr<FLevelInfo> * FoundLevel = Levels.Find(CurrentLevelName);
+	const TSharedPtr<FLevelInfo> * FoundLevel = Levels.Find(CurrentLevelName);
 	return FoundLevel ? *FoundLevel : TSharedPtr<FLevelInfo>();
 }
 
@@ -239,6 +239,7 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform, FTr
 							OtherBounds = TransformLevelBox(OtherBounds, OtherTransform);
 							if (CheckBox.Intersect(OtherBounds))
 							{
+								//DrawDebugBox(GetWorld(), CheckBox.GetCenter(), CheckBox.GetExtent(), FColor::Red, false, 80.f);
 								bIntersectsAnything = true;
 							}
 						}
@@ -418,7 +419,12 @@ void ULevelManager::SetNextLevel(ULevelStreaming * Level)
 
 bool ULevelManager::IsCurrentLevel(ULevel * InLevel)
 {
-	return LevelMap.GetCurrentLevel()->LevelStreaming->GetLoadedLevel() == InLevel;
+	return GetCurrentLevel() == InLevel;
+}
+
+ULevel * ULevelManager::GetCurrentLevel() const
+{
+	return LevelMap.GetCurrentLevel()->LevelStreaming->GetLoadedLevel();
 }
 
 FName ULevelManager::GetLevelName(ULevelStreaming * Level)
