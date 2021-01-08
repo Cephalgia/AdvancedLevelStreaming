@@ -52,43 +52,58 @@ int32 USaveLevelInfoCommandlet::Main(const FString& Params)
 
 void USaveLevelInfoCommandlet::SaveLevelInfo(UWorld * InLevelWorld)
 {
+	bool bOk = true;
+
 	FBox LevelBox = ALevelBounds::CalculateLevelBounds(InLevelWorld->PersistentLevel);
+
 	TArray<FTransform> DoorTransforms;
+	TArray<int32> DoorStrengths;
 	TArray<AActor*> Doors;
 	UGameplayStatics::GetAllActorsOfClass(InLevelWorld, ALevelStreamingDoorPoint::StaticClass(), Doors);
 	for (auto Door : Doors)
 	{
-		DoorTransforms.Add(Door->GetActorTransform());
+		if (ALevelStreamingDoorPoint * DoorPoint = Cast<ALevelStreamingDoorPoint>(Door))
+		{
+			DoorTransforms.Add(Door->GetActorTransform());
+			DoorStrengths.Add(DoorPoint->TypeStrength);
+		}
 	}
-	WriteToAsset(InLevelWorld, LevelBox, DoorTransforms);
+
+	FString LevelName = InLevelWorld->GetName();
+	int32 UnderscoreIndex = -1;
+	bOk &= LevelName.FindChar('_', UnderscoreIndex);
+	int32 UnderscoreIndex2;
+	bOk &= LevelName.FindLastChar('_', UnderscoreIndex2);
+	FName TypeName = *LevelName.Mid(UnderscoreIndex + 1, UnderscoreIndex2 - UnderscoreIndex - 1);
+
+	if (bOk)
+	{
+		WriteToAsset(InLevelWorld, LevelBox, DoorTransforms, DoorStrengths, TypeName);
+	}
 	
 }
 
-void USaveLevelInfoCommandlet::WriteToAsset(UWorld * InLevelWorld, FBox InLevelBox, TArray<FTransform> InDoorTransforms)
+void USaveLevelInfoCommandlet::WriteToAsset(UWorld * InLevelWorld, FBox InLevelBox, TArray<FTransform> InDoorTransforms, TArray<int32> InDoorStrengths, FName InTypeName)
 {
 	FString PathName = InLevelWorld->GetPathName();
 	int32 SlashIndex = -1;
-	PathName.FindLastChar('/', SlashIndex);
-	PathName = PathName.LeftChop(PathName.Len() - SlashIndex - 1);
-	PathName += "Data";
-	UPackage * Package = CreatePackage(nullptr, *PathName);
-	check(Package);
-	Package->FullyLoad();
-	Package->Modify();
-	ULevelInfoAsset * LevelAsset = NewObject<ULevelInfoAsset>(Package, ULevelInfoAsset::StaticClass(), "LevelInfo", RF_Public | RF_Standalone);
-	LevelAsset->LevelSavedInfo.LevelBox = InLevelBox;
-	LevelAsset->LevelSavedInfo.DoorTransforms = InDoorTransforms;
-	FString const PackageFileName = FPackageName::LongPackageNameToFilename(*Package->GetName(), FPackageName::GetAssetPackageExtension());
-
-	UPackage::SavePackage(Package, NULL, RF_Standalone, *PackageFileName, GError, nullptr, false, true, SAVE_NoError);
-}
-
-void USaveLevelInfoCommandlet::OnLevelLoaded()
-{
-	LevelNumber++;
-	if (LevelNumber == MaxLevelNumber)
+	if (PathName.FindLastChar('/', SlashIndex))
 	{
+		PathName = PathName.LeftChop(PathName.Len() - SlashIndex - 1);
+		PathName += InLevelWorld->GetName() + "_Data";
+		UPackage * Package = CreatePackage(nullptr, *PathName); //find package first, if no, create
+		check(Package);
+		Package->FullyLoad();
+		Package->Modify();
+		FString FileName = InLevelWorld->GetName() + "_Data";
+		ULevelInfoAsset * LevelAsset = NewObject<ULevelInfoAsset>(Package, ULevelInfoAsset::StaticClass(), *FileName, RF_Public | RF_Standalone);
+		LevelAsset->LevelSavedInfo.LevelBox = InLevelBox;
+		LevelAsset->LevelSavedInfo.DoorTransforms = InDoorTransforms;
+		LevelAsset->LevelSavedInfo.DoorStrengths = InDoorStrengths;
+		LevelAsset->LevelSavedInfo.LevelType = InTypeName;
+		FString const PackageFileName = FPackageName::LongPackageNameToFilename(*Package->GetName(), FPackageName::GetAssetPackageExtension());
 
+		UPackage::SavePackage(Package, NULL, RF_Standalone, *PackageFileName, GError, nullptr, false, true, SAVE_NoError);
 	}
 }
 

@@ -20,6 +20,15 @@ struct FLevelSavedInfo
 	// Door transfroms relative to the zero point
 	UPROPERTY(VisibleAnywhere, Category = "Info")
 	TArray<FTransform> DoorTransforms;
+
+	UPROPERTY(VisibleAnywhere, Category = "Info")
+	TArray<int32> DoorStrengths;
+
+	UPROPERTY(VisibleAnywhere, Category = "Info")
+	FName LevelType;
+
+	UPROPERTY(EditAnywhere, Category = "Info")
+	int TypeStrength;
 };
 
 /**
@@ -31,7 +40,7 @@ class ADVANCEDLEVELSTREAMING_API ULevelInfoAsset : public UDataAsset
 	GENERATED_BODY()
 
 public:
-	UPROPERTY(VisibleAnywhere, Category = "Info")
+	UPROPERTY(EditAnywhere, Category = "Info")
 	FLevelSavedInfo LevelSavedInfo;
 
 };
@@ -51,6 +60,10 @@ public:
 	TArray<TSharedPtr<FLevelDoor>> LevelDoors;
 
 	FTransform LevelTransform;
+
+	FName LevelType;
+
+	int TypeStrength;
 
 	void Reset();
 };
@@ -100,7 +113,7 @@ public:
 
 	bool RegisterDoor(ALevelStreamingDoorPoint * NewDoor);
 
-	ULevelStreaming* StreamRandomLevel(FTransform LevelTransform, FTransform LevelRelative, FTransform& NewLevelRelative, bool bStartPlay = false);
+	ULevelStreaming* StreamRandomLevel(TSharedPtr<FLevelDoor> LevelDoor, FTransform LevelRelative, FTransform& NewLevelRelative, bool bStartPlay = false);
 	void UnloadLevel(FName LevelToUnload);
 	void LoadAdjacentLevels();
 	void TrimAdjacentLevels();
@@ -108,10 +121,12 @@ public:
 	void SetCurrentLevel(ULevel * InLevel);
 	void SetNextLevel(ULevelStreaming * Level);
 
-	bool IsCurrentLevel(ULevel * InLevel);
+	bool IsCurrentLevel(ULevel * InLevel) const;
 	ULevel * GetCurrentLevel() const;
 
 	FBox TransformLevelBox(FBox InBox, FTransform InTransform);
+
+	TArray<FName> GetNewRoomTypes() const;
 
 private:
 	FLevelMap LevelMap;
@@ -122,6 +137,10 @@ private:
 	void OnFirstLevelLoaded();
 
 	int32 ActionCounter = 0;
+
+	FName CurrentRoomType;
+	int32 RoomTypeProgress = 1;
+	FName NextRoomType;
 
 	UPROPERTY()
 	TMap<FName, ULevelInfoAsset *> LevelInfoAssets;

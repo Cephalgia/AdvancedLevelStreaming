@@ -17,6 +17,9 @@ class ADVANCEDLEVELSTREAMING_API ALevelStreamingDoorPoint : public AActor
 	UPROPERTY(VisibleAnywhere, Category="LevelTransform")
 	UArrowComponent * LevelStreamingComponent;
 
+	UPROPERTY(EditAnywhere, Category = "LevelProperties")
+	int TypeStrength = 0;
+
 	bool bLocked = true; // can it open at the moment
 
 public:

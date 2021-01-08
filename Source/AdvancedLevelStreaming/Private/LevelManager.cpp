@@ -6,6 +6,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "CustomStreamLevelAction.h"
 #include "Engine/LevelBounds.h"
+#include "ALSConfig.h"
 #include "DrawDebugHelpers.h"
 
 FLevelDoor::FLevelDoor()
@@ -99,7 +100,8 @@ void ULevelManager::Initialize()
 		if (WorldAssetPackage.FindLastChar('/', SlashIndex))
 		{
 			FString LevelName = WorldAssetPackage.RightChop(SlashIndex + 1);
-			FSoftObjectPath LevelAssetName = WorldAssetPackage.LeftChop(WorldAssetPackage.Len() - SlashIndex) + "/Data.LevelInfo";
+			FString AssetName = LevelName + "_Data";
+			FSoftObjectPath LevelAssetName = WorldAssetPackage.LeftChop(WorldAssetPackage.Len() - SlashIndex) + "/" + AssetName + "." + AssetName;
 			if (ULevelInfoAsset * LevelAsset = Cast<ULevelInfoAsset>(LevelAssetName.TryLoad()))
 			{
 				LevelInfoAssets.Add(*LevelName, LevelAsset);
@@ -123,6 +125,9 @@ void ULevelManager::Tick(float DeltaSeconds)
 				if (CurrentLevel != FloorLevel)
 				{
 					SetCurrentLevel(FloorLevel);
+
+					//NextRoomType = RoomTypeProgress >= GetDefault<UALSConfig>()->MinRoomsPerType ? GetNewRoomType() : CurrentRoomType;
+
 					LoadAdjacentLevels();
 					TrimAdjacentLevels();
 				}
@@ -139,7 +144,7 @@ void ULevelManager::OnStartPlay()
 		StartTransform = PlayerPawn->GetActorTransform();
 	}
 	FTransform NewLevelTransform;
-	ULevelStreaming * StartingLevel = StreamRandomLevel(StartTransform, FTransform::Identity, NewLevelTransform, true);
+	ULevelStreaming * StartingLevel = StreamRandomLevel(TSharedPtr<FLevelDoor>(), FTransform::Identity, NewLevelTransform, true);
 	LevelMap.Levels.Empty();
 	LevelMap.Levels.Add(GetLevelName(StartingLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(StartingLevel), StartingLevel, NewLevelTransform)));
 	LevelMap.SetCurrentLevel(GetLevelName(StartingLevel));
@@ -152,23 +157,47 @@ void ULevelManager::OnFirstLevelLoaded()
 	LevelMap.GetCurrentLevel()->LevelStreaming->OnLevelShown.RemoveDynamic(this, &ULevelManager::OnFirstLevelLoaded);
 }
 
-ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform, FTransform LevelRelative, FTransform& NewLevelRelative, bool bStartPlay)
+ULevelStreaming* ULevelManager::StreamRandomLevel(TSharedPtr<FLevelDoor> LevelDoor, FTransform LevelRelative, FTransform& NewLevelRelative, bool bStartPlay)
 {
 	UWorld * CurrentWorld = GetWorld();
-	if (!CurrentWorld)
+	APawn * PlayerPawn = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
+	if (!CurrentWorld || !PlayerPawn)
 	{
 		return nullptr;
 	}
+	FTransform LevelTransform = LevelDoor.IsValid() ? LevelDoor->DoorPoint->GetPointTransform() : PlayerPawn->GetActorTransform();
 
 	TArray<FName> Levels;
 	LevelInfoAssets.GenerateKeyArray(Levels);
 	//eliminate loaded levels
-	TArray<FName> LoadedLevels;
-	LevelMap.Levels.GenerateKeyArray(LoadedLevels);
-	for (FName LoadedLevel : LoadedLevels)
-	{
-		Levels.Remove(LoadedLevel);
-	}
+	Levels = Levels.FilterByPredicate([this, LevelDoor](const FName& LevelName) 
+	{ 
+		bool bIsLoaded = LevelMap.Levels.Find(LevelName) != nullptr;
+
+		ULevelInfoAsset ** LevelInfo = LevelInfoAssets.Find(LevelName);
+		bool bTypeAvailable = *LevelInfo != nullptr;
+		if (CurrentRoomType != NAME_None)
+		{
+			FName LevelRoomType = (*LevelInfo)->LevelSavedInfo.LevelType;
+			if (RoomTypeProgress >= GetDefault<UALSConfig>()->MinRoomsPerType)
+			{
+				bTypeAvailable = GetNewRoomTypes().Contains(LevelRoomType);
+			}
+			else
+			{
+				bTypeAvailable = LevelRoomType == CurrentRoomType;
+			}
+		}
+
+		bool bIsTypeStrengthFitting = CurrentRoomType == NAME_None;
+		if (!bIsTypeStrengthFitting)
+		{
+			int32 DoorLevelTypeStr = LevelDoor->DoorPoint->TypeStrength;
+			bIsTypeStrengthFitting = (*LevelInfo)->LevelSavedInfo.DoorStrengths.Contains(DoorLevelTypeStr);
+		}
+
+		return !bIsLoaded && bTypeAvailable && bIsTypeStrengthFitting;
+	});
 	//shuffle remaining array
 	FRandomStream RandomStream(FPlatformTime::Seconds());
 	for (int i = Levels.Num() - 1; i > 0; --i)
@@ -201,7 +230,20 @@ ULevelStreaming* ULevelManager::StreamRandomLevel(FTransform LevelTransform, FTr
 			}
 			else
 			{
-				TArray<FTransform> DoorTransforms = (*LevelAsset)->LevelSavedInfo.DoorTransforms;
+				TArray<FTransform> DoorTransforms;
+				for (int i = 0; i < (*LevelAsset)->LevelSavedInfo.DoorTransforms.Num(); ++i)
+				{
+					if ((*LevelAsset)->LevelSavedInfo.DoorStrengths[i] == LevelDoor->DoorPoint->TypeStrength)
+					{
+						DoorTransforms.Add((*LevelAsset)->LevelSavedInfo.DoorTransforms[i]);
+					}
+				}
+
+				if (DoorTransforms.Num() == 0)
+				{
+					continue;
+				}
+
 				//shuffle door array
 				for (int i = DoorTransforms.Num() - 1; i > 0; --i)
 				{
@@ -358,7 +400,7 @@ void ULevelManager::LoadAdjacentLevels()
 		if (!LevelDoor->AdjacentLevel)
 		{
 			FTransform NewLevelsTransform;
-			ULevelStreaming * NewLevel = StreamRandomLevel(LevelDoor->DoorPoint->GetPointTransform(), LevelMap.GetCurrentLevel()->LevelTransform, NewLevelsTransform);
+			ULevelStreaming * NewLevel = StreamRandomLevel(LevelDoor, LevelMap.GetCurrentLevel()->LevelTransform, NewLevelsTransform);
 			if (NewLevel)
 			{
 				UE_LOG(LogTemp, Warning, TEXT("Loading %s"), *GetLevelName(NewLevel).ToString());
@@ -404,8 +446,21 @@ void ULevelManager::SetCurrentLevel(ULevel * InLevel)
 	{
 		LevelDoor->DoorPoint->DisableDoor();
 	}
+
+	FName NewLevelType = LevelMap.GetLevelMapInfo(InLevel)->LevelType;
+	if (NewLevelType != LevelMap.GetCurrentLevel()->LevelType)
+	{
+		CurrentRoomType = NewLevelType;
+		RoomTypeProgress = 1;
+	}
+	else
+	{
+		RoomTypeProgress++;
+	}
+
 	UE_LOG(LogTemp, Warning, TEXT("Current level set to %s"), *LevelMap.GetLevelMapInfo(InLevel)->LevelName.ToString());
 	LevelMap.SetCurrentLevel(LevelMap.GetLevelMapInfo(InLevel)->LevelName);
+
 	for (auto LevelDoor : LevelMap.GetCurrentLevel()->LevelDoors)
 	{
 		LevelDoor->DoorPoint->EnableDoor();
@@ -417,7 +472,7 @@ void ULevelManager::SetNextLevel(ULevelStreaming * Level)
 	
 }
 
-bool ULevelManager::IsCurrentLevel(ULevel * InLevel)
+bool ULevelManager::IsCurrentLevel(ULevel * InLevel) const
 {
 	return GetCurrentLevel() == InLevel;
 }
@@ -446,4 +501,11 @@ FBox ULevelManager::TransformLevelBox(FBox InBox, FTransform InTransform)
 	InBox.Min = Center - Extent;
 	InBox.Max = Center + Extent;
 	return InBox;
+}
+
+TArray<FName> ULevelManager::GetNewRoomTypes() const
+{
+	TArray<FName> AvailableTypes = GetDefault<UALSConfig>()->RoomTypes;
+	AvailableTypes = AvailableTypes.FilterByPredicate([this](const FName& Type) { return Type != CurrentRoomType; });
+	return AvailableTypes;
 }

@@ -13,6 +13,13 @@ public:
 	UPROPERTY(config, EditAnywhere, Category = Maps, meta = (AllowedClasses = "World"))
 	FSoftObjectPath StartingMap;
 
-	UPROPERTY(config, EditAnywhere, Category = Maps, meta = (AllowedClasses = "LevelInfoAsset"))
-	FSoftObjectPath LInfo;
+	/*UPROPERTY(config, EditAnywhere, Category = Maps, meta = (AllowedClasses = "LevelInfoAsset"))
+	FSoftObjectPath LInfo;*/
+
+	UPROPERTY(config, EditAnywhere, Category = "Spawn Settings")
+	int MinRoomsPerType = 4;
+
+	UPROPERTY(config, EditAnywhere, Category = "Spawn Settings")
+	TArray<FName> RoomTypes;
+
 };
