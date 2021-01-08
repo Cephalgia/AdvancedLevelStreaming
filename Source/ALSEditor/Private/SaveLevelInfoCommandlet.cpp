@@ -91,12 +91,20 @@ void USaveLevelInfoCommandlet::WriteToAsset(UWorld * InLevelWorld, FBox InLevelB
 	{
 		PathName = PathName.LeftChop(PathName.Len() - SlashIndex - 1);
 		PathName += InLevelWorld->GetName() + "_Data";
-		UPackage * Package = CreatePackage(nullptr, *PathName); //find package first, if no, create
+		UPackage * Package = LoadPackage(nullptr, *PathName, LOAD_EditorOnly);
+		if (Package == nullptr)
+		{
+			Package = CreatePackage(nullptr, *PathName);
+		}
 		check(Package);
 		Package->FullyLoad();
 		Package->Modify();
 		FString FileName = InLevelWorld->GetName() + "_Data";
-		ULevelInfoAsset * LevelAsset = NewObject<ULevelInfoAsset>(Package, ULevelInfoAsset::StaticClass(), *FileName, RF_Public | RF_Standalone);
+		ULevelInfoAsset * LevelAsset = LoadObject<ULevelInfoAsset>(Package, *FileName);
+		if (LevelAsset == nullptr)
+		{
+			LevelAsset = NewObject<ULevelInfoAsset>(Package, ULevelInfoAsset::StaticClass(), *FileName, RF_Public | RF_Standalone);
+		}
 		LevelAsset->LevelSavedInfo.LevelBox = InLevelBox;
 		LevelAsset->LevelSavedInfo.DoorTransforms = InDoorTransforms;
 		LevelAsset->LevelSavedInfo.DoorStrengths = InDoorStrengths;
