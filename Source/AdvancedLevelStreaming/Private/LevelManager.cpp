@@ -24,11 +24,12 @@ FLevelInfo::FLevelInfo()
 
 }
 
-FLevelInfo::FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming, FTransform InLevelTransform)
+FLevelInfo::FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming, FTransform InLevelTransform, FName InLevelType)
 {
 	LevelName = InName;
 	LevelStreaming = InLevelStreaming;
 	LevelTransform = InLevelTransform;
+	LevelType = InLevelType;
 }
 
 void FLevelInfo::Reset()
@@ -146,13 +147,16 @@ void ULevelManager::OnStartPlay()
 	FTransform NewLevelTransform;
 	ULevelStreaming * StartingLevel = StreamRandomLevel(TSharedPtr<FLevelDoor>(), FTransform::Identity, NewLevelTransform, true);
 	LevelMap.Levels.Empty();
-	LevelMap.Levels.Add(GetLevelName(StartingLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(StartingLevel), StartingLevel, NewLevelTransform)));
+	ULevelInfoAsset ** LevelInfo = LevelInfoAssets.Find(GetLevelName(StartingLevel));
+	FName LevelType = LevelInfo != nullptr ? (*LevelInfo)->LevelSavedInfo.LevelType : NAME_None;
+	LevelMap.Levels.Add(GetLevelName(StartingLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(StartingLevel), StartingLevel, NewLevelTransform, LevelType)));
 	LevelMap.SetCurrentLevel(GetLevelName(StartingLevel));
 	LevelMap.GetCurrentLevel()->LevelStreaming->OnLevelShown.AddDynamic(this, &ULevelManager::OnFirstLevelLoaded);
 }
 
 void ULevelManager::OnFirstLevelLoaded()
 {
+	SetCurrentLevel(LevelMap.GetCurrentLevel()->LevelStreaming->GetLoadedLevel());
 	LoadAdjacentLevels();
 	LevelMap.GetCurrentLevel()->LevelStreaming->OnLevelShown.RemoveDynamic(this, &ULevelManager::OnFirstLevelLoaded);
 }
@@ -404,7 +408,9 @@ void ULevelManager::LoadAdjacentLevels()
 			if (NewLevel)
 			{
 				UE_LOG(LogTemp, Warning, TEXT("Loading %s"), *GetLevelName(NewLevel).ToString());
-				LevelMap.Levels.Add(GetLevelName(NewLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(NewLevel), NewLevel, NewLevelsTransform)));
+				ULevelInfoAsset ** LevelInfo = LevelInfoAssets.Find(GetLevelName(NewLevel));
+				FName LevelType = LevelInfo != nullptr ? (*LevelInfo)->LevelSavedInfo.LevelType : NAME_None;
+				LevelMap.Levels.Add(GetLevelName(NewLevel), TSharedPtr<FLevelInfo>(new FLevelInfo(GetLevelName(NewLevel), NewLevel, NewLevelsTransform, LevelType)));
 				LevelDoor->AdjacentLevel = *LevelMap.Levels.Find(GetLevelName(NewLevel));
 				NewLevel->OnLevelShown.AddUniqueDynamic(LevelDoor->DoorPoint, &ALevelStreamingDoorPoint::OnDoorLevelShown);
 			}
@@ -448,7 +454,7 @@ void ULevelManager::SetCurrentLevel(ULevel * InLevel)
 	}
 
 	FName NewLevelType = LevelMap.GetLevelMapInfo(InLevel)->LevelType;
-	if (NewLevelType != LevelMap.GetCurrentLevel()->LevelType)
+	if (CurrentRoomType == NAME_None || NewLevelType != LevelMap.GetCurrentLevel()->LevelType)
 	{
 		CurrentRoomType = NewLevelType;
 		RoomTypeProgress = 1;

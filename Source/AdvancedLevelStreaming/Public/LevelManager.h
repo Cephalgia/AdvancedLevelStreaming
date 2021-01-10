@@ -49,7 +49,7 @@ class FLevelInfo
 {
 public:
 	FLevelInfo();
-	FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming, FTransform InLevelTransform);
+	FLevelInfo(FName InName, ULevelStreaming * InLevelStreaming, FTransform InLevelTransform, FName InLevelType);
 
 	UPROPERTY()
 	ULevelStreaming * LevelStreaming = nullptr;
